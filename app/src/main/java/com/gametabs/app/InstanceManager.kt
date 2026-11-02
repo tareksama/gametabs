@@ -36,7 +36,7 @@ object InstanceManager {
     private val listeners = mutableListOf<() -> Unit>()
     fun addListener(l: () -> Unit) { listeners += l }
     fun removeListener(l: () -> Unit) { listeners -= l }
-    private fun notifyChanged() = main.post { listeners.toList().forEach { it() } }
+    private fun notifyChanged() { main.post { listeners.toList().forEach { it() } } }
 
     fun all(): List<GameInstance> = instances.toList()
 
@@ -177,6 +177,7 @@ object InstanceManager {
         notifyChanged()
     }
 
-    private fun toast(ctx: Context, s: String) =
+    private fun toast(ctx: Context, s: String) {
         main.post { Toast.makeText(ctx.applicationContext, s, Toast.LENGTH_LONG).show() }
+    }
 }
