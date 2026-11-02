@@ -158,8 +158,8 @@ class MainActivity : AppCompatActivity() {
             "Both copies animating at the same time:\n" +
             "Android only runs the game that's on screen. To have both live at once, use split screen: " +
             "open Recents, tap the first game's icon → \"Open in split screen view\", then pick the second copy.\n\n" +
-            "Switcher: tap ① ② to switch, drag to move, long-press to come back here. " +
-            "Tap × to enter close mode: tap a red number to close that copy (then Force stop), " +
-            "or ⏻ to exit GameTabs."
+            "Switcher: tap S to jump to the next copy, drag to move it. " +
+            "Long-press S to show ① ② ×: tap a number to go to that copy, × to close a copy " +
+            "(red number, then Force stop) or ⏻ to exit GameTabs. Long-press a number to come back here."
     }
 }

@@ -25,10 +25,11 @@ import kotlin.math.abs
 /**
  * Minimal floating switcher: a small pill with one circle per copy.
  *
- *      ( ① ② × )          close mode:  ( ❶ ❷ ⏻ ↩ )
+ *   collapsed:  ( S )        expanded:  ( ① ② × )        close mode:  ( ❶ ❷ ⏻ ↩ )
  *
- *  - Tap a circle → switch to that copy (filled = on screen).
- *  - Tap × → close mode: tap a red number to close that copy, ⏻ to exit GameTabs, ↩ to cancel.
+ *  - S: tap → switch to the next copy.  Long-press → expand.
+ *  - Expanded: tap a number → switch to it and collapse.  × → close mode.  Long-press → GameTabs.
+ *  - Close mode: red number → close that copy, ⏻ → exit GameTabs, ↩ → back.
  *  - Drag anywhere on the pill → move it; position is remembered.
  *  - Long-press → open GameTabs.
  *
@@ -40,7 +41,8 @@ class TabOverlayService : Service() {
     private lateinit var pill: LinearLayout
     private lateinit var params: WindowManager.LayoutParams
     private val listener: () -> Unit = { render() }
-    private var closeMode = false
+    private enum class Mode { COLLAPSED, EXPANDED, CLOSE }
+    private var mode = Mode.COLLAPSED
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -112,23 +114,40 @@ class TabOverlayService : Service() {
     private fun render() {
         pill.removeAllViews()
         val red = Color.parseColor("#FFEF4444")
-        Copies.all().forEachIndexed { i, c ->
-            val n = (i + 1).toString()
-            if (closeMode) {
-                pill.addView(circle(n, fill = red) { closeMode = false; Copies.close(this, c); render() })
-            } else {
-                val active = c.user == Copies.active
-                pill.addView(circle(n, fill = if (active) Color.parseColor("#FF34D399") else null) {
-                    Copies.switchTo(this, c)
-                })
+        val green = Color.parseColor("#FF34D399")
+        val copies = Copies.all()
+        when (mode) {
+            Mode.COLLAPSED -> pill.addView(circle("S", fill = green,
+                onLong = { mode = Mode.EXPANDED; render() }) { switchToNext() })
+
+            Mode.EXPANDED -> {
+                copies.forEachIndexed { i, c ->
+                    val active = c.user == Copies.active
+                    pill.addView(circle((i + 1).toString(), fill = if (active) green else null) {
+                        mode = Mode.COLLAPSED; Copies.switchTo(this, c); render()
+                    })
+                }
+                pill.addView(circle("×", fill = null, small = true) { mode = Mode.CLOSE; render() })
+            }
+
+            Mode.CLOSE -> {
+                copies.forEachIndexed { i, c ->
+                    pill.addView(circle((i + 1).toString(), fill = red) {
+                        mode = Mode.COLLAPSED; Copies.close(this, c); render()
+                    })
+                }
+                pill.addView(circle("⏻", fill = red) { Copies.exitApp(this) })
+                pill.addView(circle("↩", fill = null) { mode = Mode.EXPANDED; render() })
             }
         }
-        if (closeMode) {
-            pill.addView(circle("⏻", fill = red) { Copies.exitApp(this) })
-            pill.addView(circle("↩", fill = null) { closeMode = false; render() })
-        } else {
-            pill.addView(circle("×", fill = null, small = true) { closeMode = true; render() })
-        }
+    }
+
+    /** S button: go to the copy after the one on screen (wraps around). */
+    private fun switchToNext() {
+        val copies = Copies.all()
+        if (copies.isEmpty()) return openHome()
+        val cur = copies.indexOfFirst { it.user == Copies.active }
+        Copies.switchTo(this, copies[(cur + 1) % copies.size])
     }
 
     private fun openHome() {
@@ -136,9 +155,15 @@ class TabOverlayService : Service() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
     }
 
-    /** A 30dp circle that taps, drags the whole pill, or long-presses to open GameTabs. */
+    /** A circle that taps, drags the whole pill, or long-presses. */
     @SuppressLint("ClickableViewAccessibility")
-    private fun circle(label: String, fill: Int?, small: Boolean = false, onTap: () -> Unit) = TextView(this).apply {
+    private fun circle(
+        label: String,
+        fill: Int?,
+        small: Boolean = false,
+        onLong: () -> Unit = { mode = Mode.COLLAPSED; render(); openHome() },
+        onTap: () -> Unit
+    ) = TextView(this).apply {
         text = label
         gravity = Gravity.CENTER
         textSize = if (small) 12f else 13f
@@ -155,7 +180,7 @@ class TabOverlayService : Service() {
         val slop = ViewConfiguration.get(context).scaledTouchSlop
         val longPress = ViewConfiguration.getLongPressTimeout().toLong()
         var sx = 0f; var sy = 0f; var px = 0; var py = 0; var moved = false; var longFired = false
-        val longRunnable = Runnable { longFired = true; openHome() }
+        val longRunnable = Runnable { longFired = true; performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); onLong() }
 
         setOnTouchListener { v, e ->
             when (e.actionMasked) {
