@@ -57,7 +57,6 @@ jobs:
           name: GameTabs latest build
           prerelease: true
           files: out/*.apk
-          # remove APKs from older builds
           make_latest: false
           body: |
             Built from ${{ github.sha }}.
