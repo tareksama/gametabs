@@ -23,14 +23,14 @@ jobs:
             11
             17
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install SDK, NDK and CMake used by the engine
         run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platforms;android-32" "build-tools;30.0.3" "ndk;23.1.7779620" "cmake;3.18.1"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-32" "build-tools;30.0.3" "ndk;23.1.7779620" "cmake;3.18.1"
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Build APKs
         run: |
