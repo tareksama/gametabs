@@ -2,8 +2,8 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="#0E1014"
+    android:orientation="vertical"
     android:padding="16dp">
 
     <TextView
@@ -15,56 +15,50 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="#1B2A1F"
+        android:padding="10dp"
+        android:textColor="#C8E6C9"
+        android:textSize="14sp" />
+
+    <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="1. Pick a game"
+        android:layout_marginTop="10dp"
+        android:text="Your game"
         android:textColor="#9AA4B2" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="8dp" />
+        android:layout_marginTop="4dp"
+        android:layout_weight="1" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="2. Number of instances"
-        android:textColor="#9AA4B2" />
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:background="#161A20">
+
+        <TextView
+            android:id="@+id/howTo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingExtra="2dp"
+            android:padding="10dp"
+            android:textColor="#CFD8DC"
+            android:textSize="13sp" />
+    </ScrollView>
 
     <LinearLayout
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <Button android:id="@+id/minus" android:layout_width="56dp" android:layout_height="56dp" android:text="−" />
-        <TextView
-            android:id="@+id/count"
-            android:layout_width="56dp"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp" />
-        <Button android:id="@+id/plus" android:layout_width="56dp" android:layout_height="56dp" android:text="+" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/ramHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textColor="#6B7685"
-        android:textSize="12sp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -74,6 +68,14 @@
             android:layout_weight="1"
             android:text="Log"
             android:textColor="#9AA4B2" />
+
+        <Button
+            android:id="@+id/rescan"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="Rescan"
+            android:textColor="#8AB4F8" />
 
         <Button
             android:id="@+id/shareLog"
@@ -86,7 +88,7 @@
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="110dp"
+        android:layout_height="70dp"
         android:background="#161A20">
 
         <TextView
@@ -104,7 +106,7 @@
         android:id="@+id/start"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="10dp"
         android:backgroundTint="#3D5AFE"
         android:text="Start"
         android:textColor="#FFFFFF" />

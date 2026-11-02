@@ -1,75 +1,40 @@
 # GameTabs
 
-GameTabs runs several copies of one installed Android game and lets you switch between them with a floating tab bar.
+GameTabs puts a browser-style tab bar on top of your game so you can jump between real copies of the game installed on your phone.
+
+```
+[● Game 1][● Game 2][+]                    [⌂][▴]
+```
 
 ## How it works
 
-```
- ┌──────────── GameTabs (host app) ─────────────┐
- │ MainActivity      pick game + instance count │
- │ InstanceManager   clone / launch / switch    │
- │ TabOverlayService floating tabs + keep-alive │
- └──────────────┬───────────────────────────────┘
-                │ BlackBox virtual engine (Bcore)
-   ┌────────────┼─────────────┬──────────────┐
-   ▼            ▼             ▼              ▼
- user 0       user 1        user 2   ...   user N
- game copy    game copy     game copy      (own process,
- own login    own login     own login       own data dir)
-```
+- **Each tab is a real install of the game** in its own Android profile. Game 1 is your normal profile. Game 2 lives in a work profile that Shelter or Island creates for you.
+- **Nothing is cloned or injected.** Android itself installs and runs every copy, so each one runs at full native speed.
+- **Switching** uses the same system call your home screen uses. A copy that's already running comes straight back to the front without reloading.
+- **Tab bar controls:**
+  - **Tap** a tab to switch to that copy.
+  - **+** shows how to add a copy.
+  - **⌂** opens GameTabs.
+  - **▴** hides the bar. Tap "▾ Tabs" to bring it back.
 
-- **Isolation:** each tab is the game installed in its own BlackBox *virtual user*. Every copy has its own process, data folder and account, so logins and saves stay separate.
-- **Switching:** tapping a tab calls `launchApk(pkg, userId)`. If that copy is already running, its existing task comes to the front without restarting or reloading. That's why switching feels instant.
-- **Keep-alive:** a foreground service holds the host at high priority, which keeps Android's low-memory killer away from background copies.
-- **Tab bar:** a browser-style strip is docked to the top of the screen, above whichever copy is open:
-  `[● Game 1 ×][○ Game 2][+]          [⌂][▴]`
-  - **Tap** a tab to switch. A running copy jumps straight to the front, without reloading.
-  - **×** closes that copy.
-  - **+** adds another copy.
-  - **⌂** opens GameTabs settings.
-  - **▴** hides the strip. Tap the small "▾ Tabs" handle to bring it back.
-- **Share log:** the button on the GameTabs screen sends the app's log, including the engine's internal messages, so problems can be diagnosed without a PC.
+## Getting a second copy (one time)
 
-## Install (no build needed)
+1. Install **Shelter** from F-Droid, or **Island** from the Play Store.
+2. Open it and let it create a work profile.
+3. Clone your game into the work profile.
+4. Open the work copy once and log in with your second account.
+5. In GameTabs, tap **Rescan**. It should now say "2 copies found".
 
-Every push to `main` triggers GitHub Actions, which builds the APK and posts it under
-**Releases → "GameTabs latest build"**.
+Android allows one work profile per phone, so 2 copies is the usual maximum.
 
-1. On your phone, open that release and download **GameTabs-arm64.apk**. Only pick `GameTabs-arm32.apk` for old 32-bit games.
-2. Allow "Install unknown apps" for your browser when Android asks.
-3. Open GameTabs and allow **Display over other apps**.
-4. Pick the game, set how many copies you want, and tap **Start**.
+## Install
 
-## Build it yourself
+Download **GameTabs.apk** from Releases → "GameTabs latest build". Every push to `main` rebuilds it.
 
-The BlackBox engine is included, from the maintained fork at `dreamncn/BlackBox` under the Apache-2.0 licence. The original FBlackBox repo was deleted.
+## Build
 
-You need JDK 11, Android SDK 32, NDK 23.1.7779620 and CMake 3.18.1. Then run:
+You need JDK 11 and Android SDK 32. Then run:
 
 ```
-./gradlew assembleArm64Release
+./gradlew assembleRelease
 ```
-
-The APK ends up in `app/build/outputs/apk/arm64/release/`.
-
-## Performance: what's realistic
-
-| Factor | Reality |
-|---|---|
-| Frame rate of the tab on screen | Close to native. The game runs as normal Android code, not in an emulator. The overlay doesn't cost frame time. |
-| Switch time to a running tab | Usually under 300 ms, the same as switching apps in Recents. |
-| Background tabs | Android pauses rendering for activities that aren't visible. Background copies stay logged in but usually don't keep "playing". Many games also cut their connection after a few minutes in the background. |
-| RAM | Each copy needs the game's full RAM. A heavy 3D game needs about 1.5–3 GB per copy. With too many copies, Android kills the oldest one, and that tab cold-starts again. |
-| Thermals | Several live copies drain the battery and heat the phone. |
-
-Tips for lower latency:
-- Use a phone with 12 GB of RAM or more.
-- Exclude GameTabs from battery optimisation.
-- On Xiaomi and Huawei phones, turn on "Autostart" and lock GameTabs in Recents.
-
-## Known limits and risks
-
-- **Anti-cheat and terms of service:** many online games detect virtual environments and multiple accounts. Some ban for it. Read the game's terms before using alt accounts.
-- **Google Play Services:** games that log in through Google Play Games may fail inside virtual users.
-- **targetSdk 28:** this keeps the engine compatible, but the app can't go on the Play Store. Sideload it instead.
-- **64-bit only by default:** for old 32-bit games, change `abiFilters` to `armeabi-v7a`.

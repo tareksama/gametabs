@@ -3,22 +3,15 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.gametabs.app">
 
-    <!-- Floating tab bar drawn above the running game -->
+    <!-- Tab bar drawn above the game -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Keeps instances alive while you switch between them -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.REORDER_TASKS" />
-    <!-- Needed to list installed games -->
+    <!-- List installed games -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:name=".App"
         android:label="GameTabs"
-        android:largeHeap="true"
-        android:hardwareAccelerated="true"
         android:theme="@style/Theme.GameTabs">
 
         <activity

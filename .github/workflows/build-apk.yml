@@ -23,12 +23,12 @@ jobs:
             11
             17
 
-      - name: Install SDK, NDK and CMake used by the engine
+      - name: Install Android SDK platform
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           yes | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" "platforms;android-32" "build-tools;30.0.3" "ndk;23.1.7779620" "cmake;3.18.1"
+          "$SDKM" "platforms;android-32" "build-tools;30.0.3"
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -37,13 +37,12 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_11_X64"
           java -version
           chmod +x gradlew
-          ./gradlew --no-daemon assembleArm64Release assembleArm32Release
+          ./gradlew --no-daemon assembleRelease
 
       - name: Collect APKs
         run: |
           mkdir out
-          cp app/build/outputs/apk/arm64/release/*.apk out/GameTabs-arm64.apk
-          cp app/build/outputs/apk/arm32/release/*.apk out/GameTabs-arm32.apk
+          cp app/build/outputs/apk/release/*.apk out/GameTabs.apk
           ls -la out
 
       - uses: actions/upload-artifact@v4
@@ -58,7 +57,8 @@ jobs:
           name: GameTabs latest build
           prerelease: true
           files: out/*.apk
+          # remove APKs from older builds
+          make_latest: false
           body: |
             Built from ${{ github.sha }}.
-            Install **GameTabs-arm64.apk** (works for almost every phone and game).
-            Use GameTabs-arm32.apk only for old 32-bit games.
+            Install **GameTabs.apk**.

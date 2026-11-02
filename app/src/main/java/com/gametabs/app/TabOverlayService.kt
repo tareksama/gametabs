@@ -19,22 +19,17 @@ import android.view.WindowManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 /**
  * Browser-style tab strip docked to the top of the screen, above whichever game copy is open.
  *
- *   [ Game 1  × ][ Game 2  × ][ + ]                     [⌂][▴]
+ *   [● Game 1][● Game 2][ + ]                     [⌂][▴]
  *
  *  - Tap a tab: switch to that copy (instant if it's already running).
- *  - ×: close that copy.  +: add another copy.  ⌂: GameTabs settings.  ▴: hide the strip.
+ *  - +: how to add another copy.  ⌂: GameTabs.  ▴: hide the strip.
  *  - When hidden, a small "▾ Tabs" handle stays at the top edge to bring it back.
  *
- * It is also a foreground service, which keeps background copies alive for instant switching.
+ * Runs as a foreground service so Android keeps the tab bar alive.
  */
 class TabOverlayService : Service() {
 
@@ -44,9 +39,7 @@ class TabOverlayService : Service() {
     private lateinit var handle: TextView
     private lateinit var barParams: WindowManager.LayoutParams
     private lateinit var handleParams: WindowManager.LayoutParams
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val listener: () -> Unit = { renderTabs() }
-    private var adding = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -56,13 +49,12 @@ class TabOverlayService : Service() {
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         buildBar()
         buildHandle()
-        InstanceManager.addListener(listener)
+        Copies.addListener(listener)
         renderTabs()
     }
 
     override fun onDestroy() {
-        InstanceManager.removeListener(listener)
-        scope.cancel()
+        Copies.removeListener(listener)
         runCatching { wm.removeView(bar) }
         runCatching { wm.removeView(handle) }
         super.onDestroy()
@@ -85,7 +77,7 @@ class TabOverlayService : Service() {
         val n: Notification = (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, chId)
         else Notification.Builder(this))
             .setContentTitle("GameTabs running")
-            .setContentText("Keeping your game copies ready")
+            .setContentText("Tab bar active")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .build()
@@ -119,10 +111,7 @@ class TabOverlayService : Service() {
             addView(tabRow)
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
 
-        bar.addView(iconButton("⌂") {
-            startActivity(Intent(this, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
-        })
+        bar.addView(iconButton("⌂") { openHome() })
         bar.addView(iconButton("▴") { setCollapsed(true) })
         wm.addView(bar, barParams)
     }
@@ -153,60 +142,42 @@ class TabOverlayService : Service() {
 
     private fun renderTabs() {
         tabRow.removeAllViews()
-        InstanceManager.all().forEach { inst -> tabRow.addView(tab(inst)) }
-        tabRow.addView(iconButton(if (adding) "…" else "+") { addTab() })
+        Copies.all().forEach { c -> tabRow.addView(tab(c)) }
+        // "+" opens GameTabs, which explains how to add another copy and re-scans.
+        tabRow.addView(iconButton("+") { openHome() })
     }
 
-    private fun addTab() {
-        if (adding) return
-        adding = true
-        renderTabs()
-        scope.launch {
-            val inst = kotlinx.coroutines.withContext(Dispatchers.IO) { InstanceManager.addInstance(this@TabOverlayService) }
-            adding = false
-            renderTabs()
-            inst?.let { InstanceManager.switchTo(this@TabOverlayService, it.userId) }
-        }
+    private fun openHome() {
+        startActivity(Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
     }
 
-    private fun tab(inst: GameInstance): View {
-        val active = inst.userId == InstanceManager.activeUserId
+    private fun tab(c: GameCopy): View {
+        val active = c.user == Copies.active
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(4), 0)
+            setPadding(dp(14), 0, dp(14), 0)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(if (active) "#FF3C4043" else "#00000000"))
                 cornerRadii = floatArrayOf(dp(10).toFloat(), dp(10).toFloat(), dp(10).toFloat(), dp(10).toFloat(), 0f, 0f, 0f, 0f)
             }
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34))
                 .apply { topMargin = dp(6); marginEnd = dp(2) }
-            setOnClickListener { InstanceManager.switchTo(this@TabOverlayService, inst.userId) }
+            setOnClickListener { Copies.switchTo(this@TabOverlayService, c) }
         }
-        // status dot: green = on screen, grey = running in background, hollow = not started
         row.addView(TextView(this).apply {
-            text = if (inst.running) "●" else "○"
-            setTextColor(Color.parseColor(if (active) "#FF34A853" else "#FF9AA0A6"))
+            text = "●"
+            setTextColor(Color.parseColor(if (active) "#FF34A853" else "#FF5F6368"))
             textSize = 10f
             setPadding(0, 0, dp(6), 0)
         })
         row.addView(TextView(this).apply {
-            text = inst.label
+            text = c.label
             setTextColor(Color.parseColor(if (active) "#FFFFFFFF" else "#FFBDC1C6"))
             textSize = 13f
             if (active) setTypeface(typeface, Typeface.BOLD)
         })
-        if (inst.running) {
-            row.addView(TextView(this).apply {
-                text = "×"
-                setTextColor(Color.parseColor("#FF9AA0A6"))
-                textSize = 16f
-                setPadding(dp(10), 0, dp(8), 0)
-                setOnClickListener { InstanceManager.close(inst.userId) }
-            })
-        } else {
-            row.addView(View(this), LinearLayout.LayoutParams(dp(10), 1))
-        }
         return row
     }
 

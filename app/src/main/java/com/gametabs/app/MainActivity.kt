@@ -2,8 +2,8 @@ package com.gametabs.app
 
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.drawable.Drawable
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
@@ -22,47 +22,53 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Setup screen: pick a game, choose how many instances, press Start.
- * After that you live in the floating tab bar; this screen is only for setup.
+ * Setup screen: pick the game, see how many copies were found, learn how to add one, Start.
  */
 class MainActivity : AppCompatActivity() {
 
-    companion object {
-        /** Task id of this screen, so the tab tracker never mistakes it for a game window. */
-        @Volatile var taskIdOrMinus1: Int = -1
-    }
-
     private lateinit var b: ActivityMainBinding
     private var selectedPkg: String? = null
-    private var count = 2
 
-    data class GameEntry(val pkg: String, val label: String, val icon: android.graphics.drawable.Drawable)
+    data class GameEntry(val pkg: String, val label: String, val icon: Drawable)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
-        taskIdOrMinus1 = taskId
 
         b.log.text = Log.recent()
         Log.onNewLine = { line -> runOnUiThread { b.log.append(if (b.log.text.isEmpty()) line else "\n$line") } }
         b.shareLog.setOnClickListener { shareLog() }
-
-        Prefs.load(this)?.let { (pkg, c) -> selectedPkg = pkg; count = c }
-        updateCount()
-
-        b.minus.setOnClickListener { if (count > 1) { count--; updateCount() } }
-        b.plus.setOnClickListener { if (count < 8) { count++; updateCount() } }
+        b.rescan.setOnClickListener { refreshCopies() }
         b.start.setOnClickListener { start() }
+        b.howTo.text = HOW_TO
 
+        selectedPkg = Prefs.load(this)
         b.list.layoutManager = LinearLayoutManager(this)
         loadGames()
     }
 
-    private fun updateCount() {
-        b.count.text = count.toString()
-        b.ramHint.text = "Each instance uses about as much RAM as the game itself. " +
-            "Most phones handle 2–4 instances of a heavy 3D game; 8 needs 12 GB+ of RAM."
+    override fun onResume() {
+        super.onResume()
+        refreshCopies() // picks up a copy installed while you were away
+    }
+
+    override fun onDestroy() {
+        Log.onNewLine = null
+        super.onDestroy()
+    }
+
+    private fun refreshCopies() {
+        val pkg = selectedPkg ?: run {
+            b.status.text = "Pick your game below."
+            return
+        }
+        val found = Copies.scan(this, pkg)
+        b.status.text = when (found.size) {
+            0 -> "This game wasn't found. Is it installed?"
+            1 -> "1 copy found. To get a second copy, follow the steps below, then come back."
+            else -> "${found.size} copies found. Tap Start."
+        }
     }
 
     private fun loadGames() = lifecycleScope.launch {
@@ -73,45 +79,29 @@ class MainActivity : AppCompatActivity() {
                 .map { it.activityInfo.applicationInfo }
                 .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 && it.packageName != packageName }
                 .distinctBy { it.packageName }
-                // Show games first
-                .sortedWith(compareByDescending<ApplicationInfo> {
-                    Build.VERSION.SDK_INT >= 26 && it.category == ApplicationInfo.CATEGORY_GAME
-                }.thenBy { pm.getApplicationLabel(it).toString().lowercase() })
+                .sortedWith(compareByDescending<ApplicationInfo> { it.category == ApplicationInfo.CATEGORY_GAME }
+                    .thenBy { pm.getApplicationLabel(it).toString().lowercase() })
                 .map { GameEntry(it.packageName, pm.getApplicationLabel(it).toString(), pm.getApplicationIcon(it)) }
         }
         b.list.adapter = GameAdapter(games)
     }
 
     private fun start() {
-        val pkg = selectedPkg ?: return toast("Pick a game first")
-
-        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
-            toast("Allow 'Display over other apps' so the tab bar can show above the game")
+        val pkg = selectedPkg ?: return toast("Pick your game first")
+        if (!Settings.canDrawOverlays(this)) {
+            toast("Allow 'Display over other apps' so the tabs can show above the game")
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
         }
-
-        b.start.isEnabled = false
-        b.start.text = "Cloning game… (first time only)"
-        lifecycleScope.launch {
-            val r = InstanceManager.prepare(this@MainActivity, pkg, count)
-            b.start.isEnabled = true
-            b.start.text = "Start"
-            r.onFailure {
-                Log.e("Setup failed", it)
-                return@launch toast("Failed: ${it.message}")
-            }
-            Log.i("Ready: ${InstanceManager.all().size} copies of $pkg")
-
-            val svc = Intent(this@MainActivity, TabOverlayService::class.java)
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc) else startService(svc)
-            InstanceManager.switchTo(this@MainActivity, 0)
-        }
+        val found = Copies.scan(this, pkg)
+        if (found.isEmpty()) return toast("Game not found")
+        if (found.size == 1) toast("Only 1 copy so far. Tabs will work, add a second copy when ready.")
+        startForegroundService(Intent(this, TabOverlayService::class.java))
+        Copies.switchTo(this, found.first())
     }
 
     private fun shareLog() = lifecycleScope.launch {
         val text = withContext(Dispatchers.IO) { Log.dumpForSharing() }
-        // Big logs can exceed the share limit; keep the most recent part.
         val trimmed = if (text.length > 90_000) text.takeLast(90_000) else text
         startActivity(Intent.createChooser(
             Intent(Intent.ACTION_SEND).setType("text/plain")
@@ -119,11 +109,6 @@ class MainActivity : AppCompatActivity() {
                 .putExtra(Intent.EXTRA_TEXT, trimmed),
             "Share GameTabs log"
         ))
-    }
-
-    override fun onDestroy() {
-        Log.onNewLine = null
-        super.onDestroy()
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
@@ -143,8 +128,23 @@ class MainActivity : AppCompatActivity() {
             h.itemView.isSelected = g.pkg == selectedPkg
             h.itemView.setOnClickListener {
                 selectedPkg = g.pkg
+                Prefs.save(this@MainActivity, g.pkg)
                 notifyDataSetChanged()
+                refreshCopies()
             }
         }
+    }
+
+    companion object {
+        private const val HOW_TO =
+            "How to get a second copy (one time, ~5 minutes):\n" +
+            "1. Install \"Shelter\" (free, from F-Droid) or \"Island\" (Play Store).\n" +
+            "2. Open it and let it create a work profile. Accept Android's prompts.\n" +
+            "3. In Shelter, find your game in the Main list and tap it → \"Clone to work profile\". " +
+            "(In Island: select the game → Clone.)\n" +
+            "4. Open the cloned copy once from the work apps (briefcase icon) and log in with your second account.\n" +
+            "5. Come back here and tap Rescan. You should see \"2 copies found\".\n\n" +
+            "Android allows one work profile per phone, so the usual maximum is 2 copies. " +
+            "Each copy is the real game installed by Android, so it runs at full speed."
     }
 }

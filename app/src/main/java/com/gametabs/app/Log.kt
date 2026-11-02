@@ -38,7 +38,7 @@ object Log {
     fun dumpForSharing(): String {
         val device = "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, " +
             "Android ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT}), " +
-            "64-bit=${top.niunaijun.blackbox.BlackBoxCore.is64Bit()}"
+            "ABIs=${android.os.Build.SUPPORTED_ABIS.joinToString()}"
         val logcat = try {
             val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "1500"))
             p.inputStream.bufferedReader().readText()
