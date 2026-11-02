@@ -21,11 +21,14 @@ GameTabs runs several copies of one installed Android game and lets you switch b
 - **Isolation:** each tab is the game installed in its own BlackBox *virtual user*. Every copy has its own process, data folder and account, so logins and saves stay separate.
 - **Switching:** tapping a tab calls `launchApk(pkg, userId)`. If that copy is already running, its existing task comes to the front without restarting or reloading. That's why switching feels instant.
 - **Keep-alive:** a foreground service holds the host at high priority, which keeps Android's low-memory killer away from background copies.
-- **Tab bar:** games run fullscreen, so the tabs are a small overlay window that floats on top and can be dragged.
-  - Tap **⇆** to collapse or expand the bar. Drag it to move it.
-  - **Tap** a tab to switch to it. **Long-press** a tab to close that copy.
-  - Tab colours: green means on screen, blue-grey means alive in the background, dark means not started.
-  - **⌂** goes back to setup.
+- **Tab bar:** a browser-style strip is docked to the top of the screen, above whichever copy is open:
+  `[● Game 1 ×][○ Game 2][+]          [⌂][▴]`
+  - **Tap** a tab to switch. A running copy jumps straight to the front, without reloading.
+  - **×** closes that copy.
+  - **+** adds another copy.
+  - **⌂** opens GameTabs settings.
+  - **▴** hides the strip. Tap the small "▾ Tabs" handle to bring it back.
+- **Share log:** the button on the GameTabs screen sends the app's log, including the engine's internal messages, so problems can be diagnosed without a PC.
 
 ## Install (no build needed)
 

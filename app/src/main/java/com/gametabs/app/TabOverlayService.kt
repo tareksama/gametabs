@@ -8,38 +8,45 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.util.TypedValue
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
-import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
- * Foreground service that:
- *  1. Draws a small floating, draggable tab bar ABOVE the game (games are fullscreen
- *     activities, so a normal in-app tab bar can't show on top of them).
- *  2. Keeps the host process at foreground priority, which makes Android much less likely
- *     to kill background game instances. This is what keeps switching instant.
+ * Browser-style tab strip docked to the top of the screen, above whichever game copy is open.
  *
- * Latency notes:
- *  - The overlay is tiny, uses FLAG_NOT_FOCUSABLE (never steals input from the game outside
- *    its own bounds) and only redraws when tabs change, so it costs no frame time.
- *  - The bar can be collapsed to a single bubble so it doesn't cover the game.
+ *   [ Game 1  × ][ Game 2  × ][ + ]                     [⌂][▴]
+ *
+ *  - Tap a tab: switch to that copy (instant if it's already running).
+ *  - ×: close that copy.  +: add another copy.  ⌂: GameTabs settings.  ▴: hide the strip.
+ *  - When hidden, a small "▾ Tabs" handle stays at the top edge to bring it back.
+ *
+ * It is also a foreground service, which keeps background copies alive for instant switching.
  */
 class TabOverlayService : Service() {
 
     private lateinit var wm: WindowManager
-    private lateinit var root: LinearLayout
+    private lateinit var bar: LinearLayout
     private lateinit var tabRow: LinearLayout
-    private lateinit var params: WindowManager.LayoutParams
-    private var collapsed = false
+    private lateinit var handle: TextView
+    private lateinit var barParams: WindowManager.LayoutParams
+    private lateinit var handleParams: WindowManager.LayoutParams
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val listener: () -> Unit = { renderTabs() }
+    private var adding = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -47,130 +54,168 @@ class TabOverlayService : Service() {
         super.onCreate()
         startAsForeground()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        buildOverlay()
+        buildBar()
+        buildHandle()
         InstanceManager.addListener(listener)
         renderTabs()
     }
 
     override fun onDestroy() {
         InstanceManager.removeListener(listener)
-        runCatching { wm.removeView(root) }
+        scope.cancel()
+        runCatching { wm.removeView(bar) }
+        runCatching { wm.removeView(handle) }
         super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
+    private fun dp(v: Int) = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics
+    ).toInt()
+
     private fun startAsForeground() {
         val chId = "tabs"
-        val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(
-                NotificationChannel(chId, "Game instances", NotificationManager.IMPORTANCE_MIN)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(chId, "Game tabs", NotificationManager.IMPORTANCE_MIN)
             )
         }
-        val n: Notification = Notification.Builder(this).apply {
-            if (Build.VERSION.SDK_INT >= 26) setChannelId(chId)
-        }
+        @Suppress("DEPRECATION")
+        val n: Notification = (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, chId)
+        else Notification.Builder(this))
             .setContentTitle("GameTabs running")
-            .setContentText("Instances kept alive for instant switching")
+            .setContentText("Keeping your game copies ready")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .build()
         startForeground(1, n)
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun buildOverlay() {
-        val type = if (Build.VERSION.SDK_INT >= 26)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+    private fun overlayParams(width: Int, height: Int) = WindowManager.LayoutParams(
+        width, height,
+        if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+        PixelFormat.TRANSLUCENT
+    ).apply { gravity = Gravity.TOP or Gravity.START }
 
-        params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 24; y = 24
-        }
-
-        root = LinearLayout(this).apply {
+    private fun buildBar() {
+        barParams = overlayParams(WindowManager.LayoutParams.MATCH_PARENT, dp(40))
+        bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = GradientDrawable().apply {
-                cornerRadius = 40f; setColor(Color.parseColor("#CC111318"))
-            }
-            setPadding(10, 8, 10, 8)
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.parseColor("#F0202124"))
+            setPadding(dp(4), 0, dp(4), 0)
         }
-
-        // Drag handle / collapse toggle
-        val handle = pill("⇆", Color.parseColor("#FF3D5AFE"))
-        var downX = 0; var downY = 0; var startX = 0f; var startY = 0f; var moved = false
-        handle.setOnTouchListener { _, e ->
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = params.x; downY = params.y; startX = e.rawX; startY = e.rawY; moved = false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = e.rawX - startX; val dy = e.rawY - startY
-                    if (abs(dx) > 10 || abs(dy) > 10) moved = true
-                    params.x = downX + dx.toInt(); params.y = downY + dy.toInt()
-                    wm.updateViewLayout(root, params)
-                }
-                MotionEvent.ACTION_UP -> if (!moved) toggleCollapse()
-            }
-            true
+        tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        root.addView(handle)
-
-        tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        root.addView(HorizontalScrollView(this).apply {
+        bar.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(tabRow)
-        })
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
 
-        wm.addView(root, params)
+        bar.addView(iconButton("⌂") {
+            startActivity(Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        })
+        bar.addView(iconButton("▴") { setCollapsed(true) })
+        wm.addView(bar, barParams)
     }
 
-    private fun toggleCollapse() {
-        collapsed = !collapsed
-        (root.getChildAt(1)).visibility = if (collapsed) View.GONE else View.VISIBLE
+    @SuppressLint("SetTextI18n")
+    private fun buildHandle() {
+        handleParams = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT)
+            .apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
+        handle = TextView(this).apply {
+            text = "▾ Tabs"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setPadding(dp(14), dp(2), dp(14), dp(4))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#CC202124"))
+                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat())
+            }
+            visibility = View.GONE
+            setOnClickListener { setCollapsed(false) }
+        }
+        wm.addView(handle, handleParams)
+    }
+
+    private fun setCollapsed(c: Boolean) {
+        bar.visibility = if (c) View.GONE else View.VISIBLE
+        handle.visibility = if (c) View.VISIBLE else View.GONE
     }
 
     private fun renderTabs() {
         tabRow.removeAllViews()
-        InstanceManager.all().forEach { inst ->
-            val active = inst.userId == InstanceManager.activeUserId
-            val color = when {
-                active -> "#FF00C853"     // green = on screen
-                inst.running -> "#FF546E7A" // grey-blue = alive in background
-                else -> "#FF263238"        // dark = not started
-            }
-            val tab = pill(inst.label, Color.parseColor(color))
-            tab.setOnClickListener { InstanceManager.switchTo(inst.userId) }
-            tab.setOnLongClickListener { InstanceManager.close(inst.userId); true }
-            tabRow.addView(tab)
-        }
-        // "Home" tab returns to the GameTabs setup screen
-        tabRow.addView(pill("⌂", Color.parseColor("#FF263238")).apply {
-            setOnClickListener {
-                startActivity(Intent(this@TabOverlayService, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
-            }
-        })
+        InstanceManager.all().forEach { inst -> tabRow.addView(tab(inst)) }
+        tabRow.addView(iconButton(if (adding) "…" else "+") { addTab() })
     }
 
-    private fun pill(text: String, bg: Int) = TextView(this).apply {
-        this.text = text
+    private fun addTab() {
+        if (adding) return
+        adding = true
+        renderTabs()
+        scope.launch {
+            val inst = kotlinx.coroutines.withContext(Dispatchers.IO) { InstanceManager.addInstance(this@TabOverlayService) }
+            adding = false
+            renderTabs()
+            inst?.let { InstanceManager.switchTo(this@TabOverlayService, it.userId) }
+        }
+    }
+
+    private fun tab(inst: GameInstance): View {
+        val active = inst.userId == InstanceManager.activeUserId
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(4), 0)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(if (active) "#FF3C4043" else "#00000000"))
+                cornerRadii = floatArrayOf(dp(10).toFloat(), dp(10).toFloat(), dp(10).toFloat(), dp(10).toFloat(), 0f, 0f, 0f, 0f)
+            }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34))
+                .apply { topMargin = dp(6); marginEnd = dp(2) }
+            setOnClickListener { InstanceManager.switchTo(this@TabOverlayService, inst.userId) }
+        }
+        // status dot: green = on screen, grey = running in background, hollow = not started
+        row.addView(TextView(this).apply {
+            text = if (inst.running) "●" else "○"
+            setTextColor(Color.parseColor(if (active) "#FF34A853" else "#FF9AA0A6"))
+            textSize = 10f
+            setPadding(0, 0, dp(6), 0)
+        })
+        row.addView(TextView(this).apply {
+            text = inst.label
+            setTextColor(Color.parseColor(if (active) "#FFFFFFFF" else "#FFBDC1C6"))
+            textSize = 13f
+            if (active) setTypeface(typeface, Typeface.BOLD)
+        })
+        if (inst.running) {
+            row.addView(TextView(this).apply {
+                text = "×"
+                setTextColor(Color.parseColor("#FF9AA0A6"))
+                textSize = 16f
+                setPadding(dp(10), 0, dp(8), 0)
+                setOnClickListener { InstanceManager.close(inst.userId) }
+            })
+        } else {
+            row.addView(View(this), LinearLayout.LayoutParams(dp(10), 1))
+        }
+        return row
+    }
+
+    private fun iconButton(label: String, onClick: () -> Unit) = TextView(this).apply {
+        text = label
         setTextColor(Color.WHITE)
-        textSize = 13f
-        setPadding(28, 14, 28, 14)
-        background = GradientDrawable().apply { cornerRadius = 32f; setColor(bg) }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { marginStart = 6; marginEnd = 6 }
+        textSize = 16f
+        gravity = Gravity.CENTER
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+        setOnClickListener { onClick() }
     }
 }

@@ -27,6 +27,11 @@ import kotlinx.coroutines.withContext
  */
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        /** Task id of this screen, so the tab tracker never mistakes it for a game window. */
+        @Volatile var taskIdOrMinus1: Int = -1
+    }
+
     private lateinit var b: ActivityMainBinding
     private var selectedPkg: String? = null
     private var count = 2
@@ -37,6 +42,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
+        taskIdOrMinus1 = taskId
+
+        b.log.text = Log.recent()
+        Log.onNewLine = { line -> runOnUiThread { b.log.append(if (b.log.text.isEmpty()) line else "\n$line") } }
+        b.shareLog.setOnClickListener { shareLog() }
 
         Prefs.load(this)?.let { (pkg, c) -> selectedPkg = pkg; count = c }
         updateCount()
@@ -87,12 +97,33 @@ class MainActivity : AppCompatActivity() {
             val r = InstanceManager.prepare(this@MainActivity, pkg, count)
             b.start.isEnabled = true
             b.start.text = "Start"
-            r.onFailure { return@launch toast("Failed: ${it.message}") }
+            r.onFailure {
+                Log.e("Setup failed", it)
+                return@launch toast("Failed: ${it.message}")
+            }
+            Log.i("Ready: ${InstanceManager.all().size} copies of $pkg")
 
             val svc = Intent(this@MainActivity, TabOverlayService::class.java)
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc) else startService(svc)
-            InstanceManager.switchTo(0)
+            InstanceManager.switchTo(this@MainActivity, 0)
         }
+    }
+
+    private fun shareLog() = lifecycleScope.launch {
+        val text = withContext(Dispatchers.IO) { Log.dumpForSharing() }
+        // Big logs can exceed the share limit; keep the most recent part.
+        val trimmed = if (text.length > 90_000) text.takeLast(90_000) else text
+        startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, "GameTabs log")
+                .putExtra(Intent.EXTRA_TEXT, trimmed),
+            "Share GameTabs log"
+        ))
+    }
+
+    override fun onDestroy() {
+        Log.onNewLine = null
+        super.onDestroy()
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()

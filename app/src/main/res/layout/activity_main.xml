@@ -61,6 +61,45 @@
         android:textColor="#6B7685"
         android:textSize="12sp" />
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Log"
+            android:textColor="#9AA4B2" />
+
+        <Button
+            android:id="@+id/shareLog"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="Share log"
+            android:textColor="#8AB4F8" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="110dp"
+        android:background="#161A20">
+
+        <TextView
+            android:id="@+id/log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:padding="6dp"
+            android:textColor="#B0BEC5"
+            android:textIsSelectable="true"
+            android:textSize="10sp" />
+    </ScrollView>
+
     <Button
         android:id="@+id/start"
         android:layout_width="match_parent"
