@@ -12,13 +12,16 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      # The BlackBox engine uses Android Gradle Plugin 7.2, which needs JDK 11.
-      - uses: actions/setup-java@v4
+      # sdkmanager needs JDK 17; the BlackBox engine (Android Gradle Plugin 7.2 / Gradle 7.3) builds with JDK 11.
+      # Both get installed; 17 is the default, and the Gradle step switches to 11.
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '11'
+          java-version: |
+            11
+            17
 
       - uses: android-actions/setup-android@v3
 
@@ -31,6 +34,8 @@ jobs:
 
       - name: Build APKs
         run: |
+          export JAVA_HOME="$JAVA_HOME_11_X64"
+          java -version
           chmod +x gradlew
           ./gradlew --no-daemon assembleArm64Release assembleArm32Release
 
