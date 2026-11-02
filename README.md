@@ -3,7 +3,7 @@
 GameTabs puts a browser-style tab bar on top of your game so you can jump between real copies of the game installed on your phone.
 
 ```
-[● Game 1][● Game 2][+]                    [⌂][▴]
+( ① ② )   tap = switch · drag = move · long-press = GameTabs
 ```
 
 ## How it works

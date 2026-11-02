@@ -145,6 +145,15 @@ class MainActivity : AppCompatActivity() {
             "4. Open the cloned copy once from the work apps (briefcase icon) and log in with your second account.\n" +
             "5. Come back here and tap Rescan. You should see \"2 copies found\".\n\n" +
             "Android allows one work profile per phone, so the usual maximum is 2 copies. " +
-            "Each copy is the real game installed by Android, so it runs at full speed."
+            "Each copy is the real game installed by Android, so it runs at full speed.\n\n" +
+            "Keep both copies alive (Samsung):\n" +
+            "• Settings → Battery and device care → Battery → Background usage limits: " +
+            "turn OFF \"Put unused apps to sleep\", and add both Dofus copies to \"Never sleeping apps\".\n" +
+            "• Settings → Apps → each Dofus copy → Battery → Unrestricted.\n" +
+            "• Open Recents, tap each game's icon → \"Lock this app\".\n\n" +
+            "Both copies animating at the same time:\n" +
+            "Android only runs the game that's on screen. To have both live at once, use split screen: " +
+            "open Recents, tap the first game's icon → \"Open in split screen view\", then pick the second copy.\n\n" +
+            "Switcher: tap ① ② to switch, drag to move, long-press to come back here."
     }
 }
