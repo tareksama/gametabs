@@ -73,6 +73,36 @@ object Copies {
         }
     }
 
+    /**
+     * "Close" a copy. Android doesn't let normal apps force-stop other apps (and never across
+     * profiles), so this opens the system App info page of exactly that copy, where
+     * "Force stop" is one tap away.
+     */
+    fun close(ctx: Context, copy: GameCopy) {
+        val pkg = packageName ?: return
+        try {
+            val la = launcher(ctx)
+            val act = la.getActivityList(pkg, copy.user).firstOrNull()
+                ?: return fail(ctx, "${copy.label} not found")
+            la.startAppDetailsActivity(act.componentName, copy.user, null, null)
+            if (active == copy.user) active = null
+            Log.i("Opened App info for ${copy.label} to force stop")
+            main.post { Toast.makeText(ctx.applicationContext, "Tap \"Force stop\" to close ${copy.label}", Toast.LENGTH_LONG).show() }
+            notifyChanged()
+        } catch (e: Throwable) {
+            Log.e("Could not open App info for ${copy.label}", e)
+            fail(ctx, "Could not close ${copy.label}: ${e.message}")
+        }
+    }
+
+    /** Exit GameTabs: remove the switcher and close the GameTabs screen. Games keep running. */
+    fun exitApp(ctx: Context) {
+        Log.i("Exit GameTabs")
+        ctx.stopService(android.content.Intent(ctx, TabOverlayService::class.java))
+        MainActivity.current?.get()?.finishAndRemoveTask()
+        active = null
+    }
+
     private fun fail(ctx: Context, msg: String) {
         Log.e(msg)
         main.post { Toast.makeText(ctx.applicationContext, msg, Toast.LENGTH_LONG).show() }

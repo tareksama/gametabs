@@ -25,9 +25,10 @@ import kotlin.math.abs
 /**
  * Minimal floating switcher: a small pill with one circle per copy.
  *
- *      ( ① ② )
+ *      ( ① ② × )          close mode:  ( ❶ ❷ ⏻ ↩ )
  *
  *  - Tap a circle → switch to that copy (filled = on screen).
+ *  - Tap × → close mode: tap a red number to close that copy, ⏻ to exit GameTabs, ↩ to cancel.
  *  - Drag anywhere on the pill → move it; position is remembered.
  *  - Long-press → open GameTabs.
  *
@@ -39,6 +40,7 @@ class TabOverlayService : Service() {
     private lateinit var pill: LinearLayout
     private lateinit var params: WindowManager.LayoutParams
     private val listener: () -> Unit = { render() }
+    private var closeMode = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -109,11 +111,24 @@ class TabOverlayService : Service() {
 
     private fun render() {
         pill.removeAllViews()
+        val red = Color.parseColor("#FFEF4444")
         Copies.all().forEachIndexed { i, c ->
-            val active = c.user == Copies.active
-            pill.addView(circle((i + 1).toString(), active) { Copies.switchTo(this, c) })
+            val n = (i + 1).toString()
+            if (closeMode) {
+                pill.addView(circle(n, fill = red) { closeMode = false; Copies.close(this, c); render() })
+            } else {
+                val active = c.user == Copies.active
+                pill.addView(circle(n, fill = if (active) Color.parseColor("#FF34D399") else null) {
+                    Copies.switchTo(this, c)
+                })
+            }
         }
-        if (Copies.all().isEmpty()) pill.addView(circle("⌂", false) { openHome() })
+        if (closeMode) {
+            pill.addView(circle("⏻", fill = red) { Copies.exitApp(this) })
+            pill.addView(circle("↩", fill = null) { closeMode = false; render() })
+        } else {
+            pill.addView(circle("×", fill = null, small = true) { closeMode = true; render() })
+        }
     }
 
     private fun openHome() {
@@ -123,18 +138,19 @@ class TabOverlayService : Service() {
 
     /** A 30dp circle that taps, drags the whole pill, or long-presses to open GameTabs. */
     @SuppressLint("ClickableViewAccessibility")
-    private fun circle(label: String, active: Boolean, onTap: () -> Unit) = TextView(this).apply {
+    private fun circle(label: String, fill: Int?, small: Boolean = false, onTap: () -> Unit) = TextView(this).apply {
         text = label
         gravity = Gravity.CENTER
-        textSize = 13f
+        textSize = if (small) 12f else 13f
         setTypeface(typeface, Typeface.BOLD)
-        setTextColor(if (active) Color.BLACK else Color.WHITE)
+        setTextColor(if (fill != null) Color.BLACK else Color.WHITE)
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            if (active) setColor(Color.parseColor("#FF34D399"))
-            else { setColor(Color.TRANSPARENT); setStroke(dp(2), Color.WHITE) }
+            if (fill != null) setColor(fill)
+            else { setColor(Color.TRANSPARENT); setStroke(dp(if (small) 1 else 2), Color.WHITE) }
         }
-        layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply { setMargins(dp(2), 0, dp(2), 0) }
+        val size = if (small) dp(22) else dp(30)
+        layoutParams = LinearLayout.LayoutParams(size, size).apply { setMargins(dp(2), 0, dp(2), 0) }
 
         val slop = ViewConfiguration.get(context).scaledTouchSlop
         val longPress = ViewConfiguration.getLongPressTimeout().toLong()

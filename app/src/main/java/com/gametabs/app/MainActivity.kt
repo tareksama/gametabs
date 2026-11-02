@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
+        current = java.lang.ref.WeakReference(this)
+        b.exit.setOnClickListener { Copies.exitApp(this) }
 
         b.log.text = Log.recent()
         Log.onNewLine = { line -> runOnUiThread { b.log.append(if (b.log.text.isEmpty()) line else "\n$line") } }
@@ -136,6 +138,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** Lets the switcher's Exit button close this screen too. */
+        var current: java.lang.ref.WeakReference<MainActivity>? = null
         private const val HOW_TO =
             "How to get a second copy (one time, ~5 minutes):\n" +
             "1. Install \"Shelter\" (free, from F-Droid) or \"Island\" (Play Store).\n" +
@@ -154,6 +158,8 @@ class MainActivity : AppCompatActivity() {
             "Both copies animating at the same time:\n" +
             "Android only runs the game that's on screen. To have both live at once, use split screen: " +
             "open Recents, tap the first game's icon → \"Open in split screen view\", then pick the second copy.\n\n" +
-            "Switcher: tap ① ② to switch, drag to move, long-press to come back here."
+            "Switcher: tap ① ② to switch, drag to move, long-press to come back here. " +
+            "Tap × to enter close mode: tap a red number to close that copy (then Force stop), " +
+            "or ⏻ to exit GameTabs."
     }
 }
